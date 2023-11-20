@@ -1,0 +1,119 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Servo.h>
+#include <ESP8266WiFi.h>  // Include the ESP8266WiFi library
+
+Servo S;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+int gas;
+int ldr;
+int i = 90;
+int buzzer = 7;
+int air_purifier = 6;
+
+const char* ssid = "ssb";          //  Wi-Fi SSID
+const char* password = "987654321";  // Wi-Fi password
+const char* server = "api.thingspeak.com";    // ThingSpeak server
+
+const char* apiKey = "34H30ZDLU3G13CI3";  //  ThingSpeak API key
+
+WiFiClient client;
+
+void setup() {
+  Serial.begin(9600);
+  lcd.begin();
+  lcd.backlight();
+  pinMode(buzzer, OUTPUT);
+  pinMode(air_purifier, OUTPUT);
+  S.attach(9);
+  S.write(i);
+
+  connectWiFi();
+}
+
+void loop() {
+  gas = analogRead(A0);
+  ldr = analogRead(A1);
+  
+  lcd.clear();
+  lcd.print("GAS: ");
+  lcd.print(gas);
+  if (gas >= 600) {
+    digitalWrite(buzzer, HIGH);
+    digitalWrite(air_purifier, HIGH);
+    lcd.print(" X_X !!");
+  } else {
+    digitalWrite(buzzer, LOW);
+    lcd.print(" *_*");
+  }
+  
+  lcd.setCursor(0, 1);
+  lcd.print("LIGHT: ");
+  if (ldr > 600) {
+    lcd.print("DARK");
+    i++;
+  } else if (ldr > 350) {
+    lcd.print("LOW");
+  } else if (ldr > 150) {
+    lcd.print("NORMAL");
+  } else {
+    lcd.print("HIGH");
+    i--;
+  }
+  
+  S.write(i);
+  Serial.print("GAS VALUE ");
+  Serial.print(gas);
+  Serial.print(" ");
+  Serial.print("LIGHT INTENSITY ");
+  Serial.print(ldr);
+  Serial.println();
+
+  sendToThingSpeak(gas, ldr);  // Send data to ThingSpeak
+
+  delay(1000);  
+}
+
+void connectWiFi() {
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void sendToThingSpeak(int gasValue, int ldrValue) {
+  if (client.connect(server, 80)) {
+    String postStr = apiKey;
+    postStr += "&field1=";
+    postStr += String(gasValue);
+    postStr += "&field2=";
+    postStr += String(ldrValue);
+    postStr += "\r\n\r\n";
+
+    client.print("POST /update HTTP/1.1\n");
+    client.print("Host: api.thingspeak.com\n");
+    client.print("Connection: close\n");
+    client.print("X-THINGSPEAKAPIKEY: " + apiKey + "\n");
+    client.print("Content-Type: application/x-www-form-urlencoded\n");
+    client.print("Content-Length: ");
+    client.print(postStr.length());
+    client.print("\n\n");
+    client.print(postStr);
+
+    Serial.println("Data sent to ThingSpeak");
+  } else {
+    Serial.println("Connection to ThingSpeak failed");
+  }
+  client.stop();
+}
